@@ -1,13 +1,20 @@
+"""This module handles connection (and storage) to Gov.UK COVID-19 datasets."""
 from typing import Iterable, Dict, Union, List, Optional
 from json import dumps
 from requests import get
 from http import HTTPStatus
 from enum import Enum
+from pathlib import Path
+from dateutil.parser import parse as parse_date
+from loguru import logger
 
+import datetime
+import pandas as pd
 
 StructureType = Dict[str, Union[dict, str]]
 FiltersType = Iterable[str]
 APIResponseType = Union[List[StructureType], str]
+DateLike = Union[datetime.date, str]
 
 
 class AreaTypeEnum(Enum):
@@ -37,6 +44,7 @@ class AreaTypeEnum(Enum):
 
 
 class GovUKCoronavirusData:
+    """Class for accessing gov.uk COVID-19 data."""
 
     DEFAULT_QUERY_STRUCTURE = {
         "areaType": "areaType",  # Area type as string
@@ -75,6 +83,28 @@ class GovUKCoronavirusData:
         "cumDeaths28DaysByDeathDate": "cumDeaths28DaysByDeathDate",  # Cumulative deaths within 28 days of positive test by death date
         "cumDeaths28DaysByDeathDateRate": "cumDeaths28DaysByDeathDateRate",  # Rate of cumulative deaths within 28 days of positive test by death date per 100k resident population
     }
+
+    DATA_DIR: Path = Path.home() / '.coronaviz/datasets/uk/gov.uk/'
+
+    def __init__(self, data_dir: Optional[Union[Path, str]] = None):
+        """Initialise object."""
+        self.data_dir: Path = Path(data_dir) if data_dir else self.DATA_DIR
+
+    def get_data(self, date: Optional[DateLike] = None) -> pd.DataFrame:
+        """Retrieve data for the given date."""
+        date = date if date else datetime.date.today()  # default is today
+        date = \
+            date if isinstance(date, datetime.date) else parse_date(str(date))
+        day: str = date.strftime("%Y%m%d")
+        data_path: Path = self.data_dir / f'covid19-gov-uk-data_{day}.csv'
+
+        data: pd.DataFrame = pd.DataFrame()
+        try:
+            data = pd.read_csv(data_path)
+        except FileNotFoundError:
+            data = self.get_latest_data()
+            data.to_csv(data_path, index=None)
+        return data
 
     @classmethod
     def get_latest_data(cls, filters: Optional[FiltersType] = None,
